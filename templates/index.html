@@ -167,7 +167,125 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;disp
 .burst{position:fixed;width:60px;height:60px;border-radius:50%;background:var(--accent);pointer-events:none;animation:burstLike .5s ease-out forwards;transform-origin:center;z-index:999;}
 
 @media(max-width:900px){.sidebar{display:none;}.detail-panel{width:280px;}}
-@media(max-width:640px){.detail-panel{display:none;}.songs-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:640px){
+  .detail-panel{display:none;}
+  .songs-grid{grid-template-columns:repeat(2,1fr);}
+  .topbar{height:56px;padding:0 14px;}
+  .logo{font-size:18px;}
+  .top-stat strong{font-size:13px;}
+  .topbar-stats{gap:14px;}
+  .fav-badge{min-width:120px;padding:5px 12px;}
+  .fav-badge-text{font-size:14px;}
+}
+
+/* ── MOBILE BOTTOM SHEET ── */
+.mobile-sheet-overlay{
+  display:none;
+  position:fixed;inset:0;
+  background:rgba(0,0,0,0.7);
+  z-index:200;
+  backdrop-filter:blur(4px);
+}
+
+.mobile-sheet{
+  position:fixed;
+  bottom:0;left:0;right:0;
+  background:#0e0e14;
+  border-radius:20px 20px 0 0;
+  border-top:1px solid #1c1c2a;
+  z-index:201;
+  max-height:90vh;
+  overflow-y:auto;
+  transform:translateY(100%);
+  transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+
+.mobile-sheet.open{transform:translateY(0);}
+.mobile-sheet-overlay.open{display:block;}
+
+.mobile-sheet-handle{
+  width:40px;height:4px;
+  background:#333;border-radius:2px;
+  margin:12px auto 0;
+}
+
+.mobile-sheet-content{padding:16px 20px 40px;}
+
+.mobile-sheet-hero{
+  display:flex;align-items:center;gap:14px;
+  margin-bottom:20px;
+  padding-bottom:16px;
+  border-bottom:1px solid #1c1c2a;
+}
+
+.mobile-sheet-cover{
+  width:72px;height:72px;
+  border-radius:10px;
+  object-fit:cover;
+  background:#252525;
+  flex-shrink:0;
+}
+
+.mobile-sheet-info{flex:1;min-width:0;}
+
+.mobile-sheet-title{
+  font-size:17px;font-weight:700;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  margin-bottom:4px;
+}
+
+.mobile-sheet-artist{font-size:13px;color:#888;}
+.mobile-sheet-genre{font-size:11px;color:#555;margin-top:3px;}
+
+.mobile-actions{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:10px;margin-bottom:20px;
+}
+
+.mobile-btn-like{
+  padding:16px;border-radius:12px;border:none;
+  background:var(--accent);color:#fff;
+  font-family:'Outfit',sans-serif;font-size:15px;font-weight:700;
+  cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:opacity .15s;
+}
+
+.mobile-btn-like:active{opacity:0.8;}
+
+.mobile-btn-skip{
+  padding:16px;border-radius:12px;
+  border:1px solid #2e2e2e;background:transparent;
+  color:#888;font-family:'Outfit',sans-serif;font-size:15px;font-weight:600;
+  cursor:pointer;transition:all .15s;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+
+.mobile-btn-skip:active{border-color:#888;color:#f0f0f0;}
+
+/* Préférences mobile */
+.mobile-pref-title{
+  font-size:11px;font-weight:600;color:#555;
+  letter-spacing:1px;text-transform:uppercase;
+  margin-bottom:12px;
+}
+
+/* Barre fixe en bas sur mobile */
+.mobile-bottom-bar{
+  display:none;
+  position:fixed;
+  bottom:0;left:0;right:0;
+  background:#0a0a0a;
+  border-top:1px solid #1a1a1a;
+  padding:10px 16px 20px;
+  z-index:150;
+  gap:10px;
+}
+
+@media(max-width:640px){
+  .mobile-bottom-bar{display:flex;}
+  .main{padding-bottom:80px;}
+}
 </style>
 </head>
 <body>
@@ -687,14 +805,186 @@ function burstEffect(){
 }
 
 /* ══════════════════════
+   MOBILE FUNCTIONS
+══════════════════════ */
+const audioMobile = document.getElementById('audio-player');
+let audioMobilePlaying = false;
+
+function openSheet(gi, ch){
+  const info = GENRE_INFO[GENRES[gi]];
+  document.getElementById('ms-cover').src   = ch.cover || '';
+  document.getElementById('ms-title').textContent  = ch.titre;
+  document.getElementById('ms-artist').textContent = ch.artiste;
+  document.getElementById('ms-genre').textContent  = info.emoji + ' ' + GENRES[gi];
+  document.getElementById('ms-btn-like').style.background = info.couleur;
+  document.getElementById('mb-btn-like').style.background = info.couleur;
+
+  // Preview audio
+  const previewBar = document.getElementById('ms-preview-bar');
+  if(ch.preview){
+    audioMobile.src = ch.preview;
+    previewBar.style.display = 'flex';
+    document.getElementById('ms-preview-btn').textContent = '▶';
+    document.getElementById('ms-preview-fill').style.width = '0%';
+    document.getElementById('ms-preview-time').textContent = '0:30';
+  } else {
+    previewBar.style.display = 'none';
+  }
+
+  // Barres préférences
+  updateMobilePrefBars();
+
+  document.getElementById('mobile-sheet').classList.add('open');
+  document.getElementById('sheet-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSheet(){
+  audioMobile.pause();
+  audioMobilePlaying = false;
+  document.getElementById('mobile-sheet').classList.remove('open');
+  document.getElementById('sheet-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function togglePreviewMobile(){
+  if(!audioMobile.src) return;
+  if(audioMobilePlaying){
+    audioMobile.pause();
+    audioMobilePlaying = false;
+    document.getElementById('ms-preview-btn').textContent = '▶';
+  } else {
+    audioMobile.play();
+    audioMobilePlaying = true;
+    document.getElementById('ms-preview-btn').textContent = '⏸';
+  }
+}
+
+audioMobile.addEventListener('timeupdate', () => {
+  if(!audioMobile.duration) return;
+  const pct = (audioMobile.currentTime / audioMobile.duration) * 100;
+  document.getElementById('ms-preview-fill').style.width = pct + '%';
+  const rem = Math.ceil(audioMobile.duration - audioMobile.currentTime);
+  document.getElementById('ms-preview-time').textContent = '0:' + String(rem).padStart(2,'0');
+});
+
+audioMobile.addEventListener('ended', () => {
+  audioMobilePlaying = false;
+  document.getElementById('ms-preview-btn').textContent = '▶';
+});
+
+async function aimerMobile(){
+  closeSheet();
+  burstEffect();
+  const res  = await fetch('/aimer', {method:'POST'});
+  const data = await res.json();
+  updateUI(data);
+  addHistorique(data.genre, data.chanson.titre, 'like');
+}
+
+async function suivantMobile(){
+  closeSheet();
+  const res  = await fetch('/suivant', {method:'POST'});
+  const data = await res.json();
+  updateUI(data);
+  addHistorique(data.genre, data.chanson.titre, 'skip');
+}
+
+function updateMobilePrefBars(){
+  const maxLike = Math.max(...state.likes, 0.001);
+  const pb = document.getElementById('ms-pref-bars');
+  pb.innerHTML = '';
+  GENRES.forEach((g, i) => {
+    const inf = GENRE_INFO[g];
+    const pct = ((state.likes[i] / maxLike) * 100).toFixed(0);
+    const tauxG = state.propositions[i] > 0
+      ? Math.round(state.likes[i] / state.propositions[i] * 100) + '%' : '—';
+    pb.innerHTML += `
+      <div class="pref-bar-item">
+        <div class="pref-bar-row">
+          <div class="pref-bar-name">${inf.emoji} ${g}</div>
+          <div class="pref-bar-meta">${state.likes[i].toFixed(1)}pts · ${tauxG}</div>
+        </div>
+        <div class="pref-track">
+          <div class="pref-fill" style="width:${pct}%;background:${inf.couleur}"></div>
+        </div>
+      </div>`;
+  });
+}
+
+// Ouvrir le sheet quand on clique une chanson sur mobile
+const origSelectSong = selectSong;
+selectSong = function(gi, ch){
+  origSelectSong(gi, ch);
+  if(window.innerWidth <= 640){
+    state.genreActuel = gi;
+    state.chansonActuelle = ch;
+    openSheet(gi, ch);
+  }
+};
+
+// Ouvrir le sheet pour la chanson actuelle au chargement sur mobile
+if(window.innerWidth <= 640 && state.chansonActuelle){
+  setTimeout(() => {
+    const mbLike = document.getElementById('mb-btn-like');
+    if(mbLike) mbLike.style.background = GENRE_INFO[GENRES[state.genreActuel]].couleur;
+  }, 100);
+}
+
+/* ══════════════════════
    INIT
 ══════════════════════ */
-// Afficher immédiatement la chanson proposée par Flask
 document.getElementById('detail-empty').style.display = 'none';
 document.getElementById('detail-hero-wrap').style.display = 'flex';
 loadPreview('{{ chanson.preview | default("") }}');
 updateSongsGrid(null);
 updateSidebar();
 </script>
+<!-- MOBILE BOTTOM SHEET -->
+<div class="mobile-sheet-overlay" id="sheet-overlay" onclick="closeSheet()"></div>
+<div class="mobile-sheet" id="mobile-sheet">
+  <div class="mobile-sheet-handle"></div>
+  <div class="mobile-sheet-content">
+
+    <div class="mobile-sheet-hero">
+      <img class="mobile-sheet-cover" id="ms-cover" src="" alt=""
+        onerror="this.style.display='none'">
+      <div class="mobile-sheet-info">
+        <div class="mobile-sheet-title" id="ms-title">—</div>
+        <div class="mobile-sheet-artist" id="ms-artist">—</div>
+        <div class="mobile-sheet-genre" id="ms-genre">—</div>
+      </div>
+    </div>
+
+    <!-- Preview audio mobile -->
+    <div class="preview-bar" id="ms-preview-bar" style="display:none;margin-bottom:16px;">
+      <button class="preview-btn" id="ms-preview-btn" onclick="togglePreviewMobile()">▶</button>
+      <div class="preview-progress"><div class="preview-fill" id="ms-preview-fill"></div></div>
+      <span class="preview-time" id="ms-preview-time">0:30</span>
+    </div>
+
+    <div class="mobile-actions">
+      <button class="mobile-btn-like" id="ms-btn-like" onclick="aimerMobile()">♥ Aimer</button>
+      <button class="mobile-btn-skip" onclick="suivantMobile()">→ Suivant</button>
+    </div>
+
+    <!-- Barres préférences -->
+    <div class="mobile-pref-title">PRÉFÉRENCES APPRISES</div>
+    <div id="ms-pref-bars"></div>
+
+  </div>
+</div>
+
+<!-- MOBILE BOTTOM BAR -->
+<div class="mobile-bottom-bar">
+  <button class="mobile-btn-like" id="mb-btn-like" onclick="aimerMobile()" style="flex:1">
+    ♥ Aimer
+  </button>
+  <button class="mobile-btn-skip" onclick="suivantMobile()" style="flex:1">
+    → Suivant
+  </button>
+  <button class="mobile-btn-skip" onclick="reinitialiser()" style="padding:16px 14px;">↺</button>
+</div>
+
 </body>
 </html>
