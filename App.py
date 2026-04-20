@@ -5,9 +5,10 @@ import json
 import os
 import requests
 import time
+import threading
 
 app = Flask(__name__)
-app.secret_key = 'musique_rl_secret'
+app.secret_key = os.environ.get('SECRET_KEY', 'musique_rl_secret')
 
 # ═══════════════════════════════════════════════════
 # MÉMOIRE PERSISTANTE
@@ -15,22 +16,16 @@ app.secret_key = 'musique_rl_secret'
 MEMORY_FILE = 'musicrl_memory.json'
 
 def charger_memoire():
-    """
-    Charge la mémoire depuis le fichier JSON.
-    Si la mémoire a un nombre de genres différent du catalogue actuel,
-    elle est ignorée pour éviter les erreurs d'index.
-    """
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            # Vérification critique : le nombre de genres doit correspondre
             if (len(data.get('likes', [])) == N and
                 len(data.get('propositions', [])) == N):
                 return data
             else:
                 print(f"Mémoire ignorée : {len(data.get('likes', []))} genres sauvegardés vs {N} actuels")
-                os.remove(MEMORY_FILE)  # Supprime l'ancienne mémoire incompatible
+                os.remove(MEMORY_FILE)
         except Exception as e:
             print(f"Erreur lecture mémoire: {e}")
     return None
@@ -43,14 +38,9 @@ def sauvegarder_memoire(data):
         print(f"Erreur sauvegarde: {e}")
 
 # ═══════════════════════════════════════════════════
-# DEEZER API — aucune clé, aucun compte requis
+# DEEZER API
 # ═══════════════════════════════════════════════════
 DEEZER_URL = "https://api.deezer.com/search"
-
-# Cache pour éviter trop de requêtes Deezer
-_cache_deezer = {}
-_cache_time   = {}
-CACHE_DUREE   = 3600  # 1 heure
 
 GENRES_DEEZER = {
     "Rock":      "rock",
@@ -63,55 +53,6 @@ GENRES_DEEZER = {
     "Metal":     "metal",
 }
 
-def chercher_chansons_deezer(genre, limite=20):
-    """
-    Recherche des chansons sur Deezer par genre.
-    Retourne une liste de chansons enrichies avec pochette et preview.
-    Utilise un cache pour éviter de surcharger l'API.
-    """
-    now = time.time()
-
-    # Retourner le cache si encore valide
-    if genre in _cache_deezer and now - _cache_time.get(genre, 0) < CACHE_DUREE:
-        return _cache_deezer[genre]
-
-    query = GENRES_DEEZER.get(genre, genre.lower())
-
-    try:
-        response = requests.get(
-            DEEZER_URL,
-            params={"q": query, "limit": limite},
-            timeout=5
-        )
-        data = response.json()
-
-        chansons = []
-        for track in data.get('data', []):
-            # Garder seulement les chansons avec preview audio
-            if not track.get('preview'):
-                continue
-
-            chansons.append({
-                "titre":      track['title'],
-                "artiste":    track['artist']['name'],
-                "cover":      track['album'].get('cover_big', track['album'].get('cover', '')),
-                "preview":    track['preview'],
-                "popularite": track.get('rank', 0),
-                "deezer_id":  track['id'],
-                "bpm":        0,  # Deezer ne donne pas le BPM directement
-            })
-
-        if chansons:
-            _cache_deezer[genre] = chansons
-            _cache_time[genre]   = now
-            return chansons
-
-    except Exception as e:
-        print(f"Erreur Deezer pour {genre}: {e}")
-
-    # Fallback : catalogue statique si Deezer ne répond pas
-    return catalogue_statique.get(genre, {}).get('chansons', [])
-
 # ═══════════════════════════════════════════════════
 # CATALOGUE STATIQUE — fallback si pas internet
 # ═══════════════════════════════════════════════════
@@ -119,70 +60,69 @@ catalogue_statique = {
     "Rock": {
         "emoji": "🎸", "couleur": "#e74c3c",
         "chansons": [
-            {"titre": "Bohemian Rhapsody",       "artiste": "Queen",   "bpm": 120, "cover": "", "preview": ""},
-            {"titre": "Smells Like Teen Spirit", "artiste": "Nirvana", "bpm": 117, "cover": "", "preview": ""},
-            {"titre": "Back in Black",           "artiste": "AC/DC",   "bpm": 94,  "cover": "", "preview": ""},
+            {"titre": "Bohemian Rhapsody",       "artiste": "Queen",   "bpm": 120, "cover": "https://upload.wikimedia.org/wikipedia/en/9/9f/Bohemian_Rhapsody.png", "preview": "", "popularite": 0},
+            {"titre": "Smells Like Teen Spirit", "artiste": "Nirvana", "bpm": 117, "cover": "https://upload.wikimedia.org/wikipedia/en/b/b7/NirvanaNevermindalbumcover.jpg", "preview": "", "popularite": 0},
+            {"titre": "Back in Black",           "artiste": "AC/DC",   "bpm": 94,  "cover": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Acdc_backinblack.jpg/400px-Acdc_backinblack.jpg", "preview": "", "popularite": 0},
         ]
     },
     "Pop": {
         "emoji": "🎤", "couleur": "#e91e8c",
         "chansons": [
-            {"titre": "Billie Jean",        "artiste": "Michael Jackson", "bpm": 117, "cover": "", "preview": ""},
-            {"titre": "Rolling in the Deep","artiste": "Adele",           "bpm": 105, "cover": "", "preview": ""},
-            {"titre": "Shape of You",       "artiste": "Ed Sheeran",      "bpm": 96,  "cover": "", "preview": ""},
+            {"titre": "Billie Jean",         "artiste": "Michael Jackson", "bpm": 117, "cover": "https://upload.wikimedia.org/wikipedia/en/5/55/Michael_Jackson_-_Thriller.png", "preview": "", "popularite": 0},
+            {"titre": "Rolling in the Deep", "artiste": "Adele",           "bpm": 105, "cover": "https://upload.wikimedia.org/wikipedia/en/1/1b/Adele_-_21.png", "preview": "", "popularite": 0},
+            {"titre": "Shape of You",        "artiste": "Ed Sheeran",      "bpm": 96,  "cover": "https://upload.wikimedia.org/wikipedia/en/3/35/Ed_Sheeran_-_%C3%B7_%28Divide%29.png", "preview": "", "popularite": 0},
         ]
     },
     "Hip-Hop": {
         "emoji": "🎤", "couleur": "#f39c12",
         "chansons": [
-            {"titre": "HUMBLE.",     "artiste": "Kendrick Lamar", "bpm": 150, "cover": "", "preview": ""},
-            {"titre": "God's Plan",  "artiste": "Drake",          "bpm": 77,  "cover": "", "preview": ""},
-            {"titre": "Lose Yourself","artiste": "Eminem",        "bpm": 171, "cover": "", "preview": ""},
+            {"titre": "HUMBLE.",      "artiste": "Kendrick Lamar", "bpm": 150, "cover": "https://upload.wikimedia.org/wikipedia/en/7/7c/Damn._Kendrick_Lamar.jpg", "preview": "", "popularite": 0},
+            {"titre": "God's Plan",   "artiste": "Drake",          "bpm": 77,  "cover": "https://upload.wikimedia.org/wikipedia/en/9/90/Scorpion_by_Drake.jpg", "preview": "", "popularite": 0},
+            {"titre": "Lose Yourself","artiste": "Eminem",         "bpm": 171, "cover": "https://upload.wikimedia.org/wikipedia/en/4/43/Eminem_-_Lose_Yourself.jpg", "preview": "", "popularite": 0},
         ]
     },
     "Jazz": {
         "emoji": "🎷", "couleur": "#9b59b6",
         "chansons": [
-            {"titre": "So What",       "artiste": "Miles Davis",  "bpm": 136, "cover": "", "preview": ""},
-            {"titre": "Take Five",     "artiste": "Dave Brubeck", "bpm": 172, "cover": "", "preview": ""},
-            {"titre": "Autumn Leaves", "artiste": "Bill Evans",   "bpm": 98,  "cover": "", "preview": ""},
+            {"titre": "So What",       "artiste": "Miles Davis",  "bpm": 136, "cover": "https://upload.wikimedia.org/wikipedia/en/c/c4/Miles_Davis_-_Kind_of_Blue.jpg", "preview": "", "popularite": 0},
+            {"titre": "Take Five",     "artiste": "Dave Brubeck", "bpm": 172, "cover": "https://upload.wikimedia.org/wikipedia/en/a/a0/Take_Five.PNG", "preview": "", "popularite": 0},
+            {"titre": "Autumn Leaves", "artiste": "Bill Evans",   "bpm": 98,  "cover": "https://upload.wikimedia.org/wikipedia/en/1/17/Portrait_in_Jazz.jpg", "preview": "", "popularite": 0},
         ]
     },
     "Classique": {
         "emoji": "🎼", "couleur": "#e67e22",
         "chansons": [
-            {"titre": "Fur Elise",          "artiste": "Beethoven", "bpm": 84,  "cover": "", "preview": ""},
-            {"titre": "Clair de Lune",      "artiste": "Debussy",   "bpm": 60,  "cover": "", "preview": ""},
-            {"titre": "Les Quatre Saisons", "artiste": "Vivaldi",   "bpm": 128, "cover": "", "preview": ""},
+            {"titre": "Fur Elise",          "artiste": "Beethoven", "bpm": 84,  "cover": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Beethoven.jpg/400px-Beethoven.jpg", "preview": "", "popularite": 0},
+            {"titre": "Clair de Lune",      "artiste": "Debussy",   "bpm": 60,  "cover": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/48/Claude_Debussy_circa_1908%2C_foto_av_Nadar.jpg/400px-Claude_Debussy_circa_1908%2C_foto_av_Nadar.jpg", "preview": "", "popularite": 0},
+            {"titre": "Les Quatre Saisons", "artiste": "Vivaldi",   "bpm": 128, "cover": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bd/Vivaldi.jpg/400px-Vivaldi.jpg", "preview": "", "popularite": 0},
         ]
     },
     "Electro": {
         "emoji": "🎧", "couleur": "#3498db",
         "chansons": [
-            {"titre": "One More Time", "artiste": "Daft Punk", "bpm": 123, "cover": "", "preview": ""},
-            {"titre": "Strobe",        "artiste": "deadmau5",  "bpm": 128, "cover": "", "preview": ""},
-            {"titre": "Levels",        "artiste": "Avicii",    "bpm": 126, "cover": "", "preview": ""},
+            {"titre": "One More Time", "artiste": "Daft Punk", "bpm": 123, "cover": "https://upload.wikimedia.org/wikipedia/en/0/0d/DaftPunkDiscoveryalbumcover.jpg", "preview": "", "popularite": 0},
+            {"titre": "Strobe",        "artiste": "deadmau5",  "bpm": 128, "cover": "https://upload.wikimedia.org/wikipedia/en/7/77/For_Lack_of_a_Better_Name.jpg", "preview": "", "popularite": 0},
+            {"titre": "Levels",        "artiste": "Avicii",    "bpm": 126, "cover": "https://upload.wikimedia.org/wikipedia/en/f/f5/Avicii_True_album_cover.png", "preview": "", "popularite": 0},
         ]
     },
     "R&B": {
         "emoji": "🎵", "couleur": "#1abc9c",
         "chansons": [
-            {"titre": "Crazy in Love", "artiste": "Beyonce",      "bpm": 99, "cover": "", "preview": ""},
-            {"titre": "Kiss",          "artiste": "Prince",        "bpm": 108,"cover": "", "preview": ""},
-            {"titre": "No Scrubs",     "artiste": "TLC",           "bpm": 98, "cover": "", "preview": ""},
+            {"titre": "Crazy in Love", "artiste": "Beyonce", "bpm": 99,  "cover": "https://upload.wikimedia.org/wikipedia/en/a/a2/Beyonc%C3%A9_-_Dangerously_in_Love.png", "preview": "", "popularite": 0},
+            {"titre": "Kiss",          "artiste": "Prince",  "bpm": 108, "cover": "https://upload.wikimedia.org/wikipedia/en/b/b4/Parade_%28album_cover%29.png", "preview": "", "popularite": 0},
+            {"titre": "No Scrubs",     "artiste": "TLC",     "bpm": 98,  "cover": "https://upload.wikimedia.org/wikipedia/en/a/a5/Tlc-fanmail.jpg", "preview": "", "popularite": 0},
         ]
     },
     "Metal": {
         "emoji": "🤘", "couleur": "#c0392b",
         "chansons": [
-            {"titre": "Enter Sandman",      "artiste": "Metallica",    "bpm": 123, "cover": "", "preview": ""},
-            {"titre": "Paranoid",           "artiste": "Black Sabbath","bpm": 164, "cover": "", "preview": ""},
-            {"titre": "Master of Puppets",  "artiste": "Metallica",    "bpm": 220, "cover": "", "preview": ""},
+            {"titre": "Enter Sandman",     "artiste": "Metallica",    "bpm": 123, "cover": "https://upload.wikimedia.org/wikipedia/en/d/d8/Metallica_-_Metallica_%28album%29.jpg", "preview": "", "popularite": 0},
+            {"titre": "Paranoid",          "artiste": "Black Sabbath","bpm": 164, "cover": "https://upload.wikimedia.org/wikipedia/en/2/26/Black_Sabbath_-_Paranoid.jpg", "preview": "", "popularite": 0},
+            {"titre": "Master of Puppets","artiste": "Metallica",    "bpm": 220, "cover": "https://upload.wikimedia.org/wikipedia/en/b/b2/Metallica_-_Master_of_Puppets_cover.jpg", "preview": "", "popularite": 0},
         ]
     },
 }
 
-# Infos visuelles par genre
 GENRE_INFO = {
     "Rock":      {"emoji": "🎸", "couleur": "#e74c3c"},
     "Pop":       {"emoji": "🎤", "couleur": "#e91e8c"},
@@ -198,10 +138,92 @@ genres = list(GENRE_INFO.keys())
 N      = len(genres)
 
 # ═══════════════════════════════════════════════════
+# CATALOGUE DEEZER — chargé une seule fois au démarrage
+# ═══════════════════════════════════════════════════
+# Dictionnaire global : genre → liste de chansons Deezer
+catalogue_deezer = {}
+_catalogue_lock  = threading.Lock()
+_catalogue_pret  = False   # True quand tous les genres sont chargés
+
+def charger_catalogue_deezer():
+    """
+    Appelé dans un thread au démarrage.
+    Remplit catalogue_deezer pour chaque genre depuis l'API Deezer.
+    Si un genre échoue → fallback statique conservé.
+    """
+    global _catalogue_pret
+    print("🎵 Chargement du catalogue Deezer en arrière-plan…")
+
+    for genre in genres:
+        query = GENRES_DEEZER.get(genre, genre.lower())
+        try:
+            response = requests.get(
+                DEEZER_URL,
+                params={"q": query, "limit": 20},
+                timeout=8
+            )
+            data = response.json()
+            chansons = []
+            for track in data.get('data', []):
+                if not track.get('preview'):
+                    continue
+                chansons.append({
+                    "titre":      track['title'],
+                    "artiste":    track['artist']['name'],
+                    "cover":      track['album'].get('cover_big', track['album'].get('cover', '')),
+                    "preview":    track['preview'],
+                    "popularite": track.get('rank', 0),
+                    "deezer_id":  track['id'],
+                    "bpm":        0,
+                    "bonus_popularite": round((track.get('rank', 0) / 1_000_000) * 0.2, 3),
+                })
+
+            if chansons:
+                with _catalogue_lock:
+                    catalogue_deezer[genre] = chansons
+                print(f"  ✓ {genre} : {len(chansons)} chansons")
+            else:
+                print(f"  ✗ {genre} : aucune chanson avec preview → fallback statique")
+
+        except Exception as e:
+            print(f"  ✗ {genre} : erreur Deezer ({e}) → fallback statique")
+
+        time.sleep(0.3)  # respecter l'API Deezer
+
+    _catalogue_pret = True
+    print("✅ Catalogue Deezer prêt !")
+
+def get_chansons(genre):
+    """
+    Retourne les chansons Deezer si disponibles, sinon le fallback statique.
+    """
+    with _catalogue_lock:
+        if genre in catalogue_deezer:
+            return catalogue_deezer[genre]
+    return catalogue_statique.get(genre, {}).get('chansons', [])
+
+def get_catalogue_complet():
+    """
+    Retourne le catalogue complet (Deezer ou statique) pour tous les genres.
+    Utilisé pour passer au template.
+    """
+    resultat = {}
+    for genre in genres:
+        chansons = get_chansons(genre)
+        # Limiter à 10 chansons max par genre pour le template
+        resultat[genre] = chansons[:10]
+    return resultat
+
+# ═══════════════════════════════════════════════════
+# LANCEMENT DU CHARGEMENT EN ARRIÈRE-PLAN
+# ═══════════════════════════════════════════════════
+_thread_catalogue = threading.Thread(target=charger_catalogue_deezer, daemon=True)
+_thread_catalogue.start()
+
+# ═══════════════════════════════════════════════════
 # SESSION
 # ═══════════════════════════════════════════════════
 def init_session():
-    # Toujours réinitialiser si la taille ne correspond pas
     if 'ucb' in session:
         ucb = session['ucb']
         if (len(ucb.get('likes', [])) != N or
@@ -241,17 +263,14 @@ def sauvegarder_session(ucb):
     })
 
 # ═══════════════════════════════════════════════════
-# ALGORITHME HYBRIDE UCB1 + WARMSTART + EPSILON
+# ALGORITHME UCB1 + EPSILON ADAPTATIF
 # ═══════════════════════════════════════════════════
 def epsilon_adaptatif(likes_count):
-    base    = 0.40
-    minimum = 0.05
-    return max(minimum, base - likes_count * 0.018)
+    return max(0.05, 0.40 - likes_count * 0.018)
 
 def ucb_score(likes, propositions, total, c=1.5):
     scores = []
-    n = len(propositions)  # utilise la taille réelle, pas N global
-    for i in range(n):
+    for i in range(len(propositions)):
         if propositions[i] == 0:
             scores.append(float('inf'))
         else:
@@ -266,14 +285,12 @@ def choisir_genre(ucb):
     total        = ucb['total']
     likes_count  = ucb.get('likes_count', 0)
 
-    # Nouveau visiteur → UCB1 pur
     if likes_count == 0:
         scores    = ucb_score(likes, propositions, total)
         max_s     = max(scores)
         candidats = [i for i, s in enumerate(scores) if s == max_s]
         return random.choice(candidats)
 
-    # Visiteur connu → epsilon adaptatif
     eps = epsilon_adaptatif(likes_count)
     if random.random() < eps:
         min_props  = min(propositions)
@@ -294,21 +311,11 @@ def decay_likes(likes, genre_idx, alpha=0.92):
     return likes
 
 def choisir_chanson(genre_idx):
-    """
-    Choisit une chanson depuis Deezer.
-    Récompense enrichie selon la popularité.
-    """
     genre    = genres[genre_idx]
-    chansons = chercher_chansons_deezer(genre)
-    if not chansons:
-        chansons = catalogue_statique.get(genre, {}).get('chansons', [])
-    chanson = random.choice(chansons)
-
-    # Récompense enrichie avec la popularité Deezer
-    # Sera utilisée dans aimer() pour un signal plus riche
+    chansons = get_chansons(genre)
+    chanson  = random.choice(chansons)
     popularite = chanson.get('popularite', 0)
-    chanson['bonus_popularite'] = round((popularite / 1000000) * 0.2, 3) if popularite > 0 else 0.0
-
+    chanson['bonus_popularite'] = round((popularite / 1_000_000) * 0.2, 3) if popularite > 0 else 0.0
     return chanson
 
 def formater_scores(likes, propositions, total):
@@ -316,7 +323,6 @@ def formater_scores(likes, propositions, total):
     return [round(s, 3) if s != float('inf') else '∞' for s in scores]
 
 def construire_reponse(ucb, genre_idx, chanson):
-    """Construit la réponse JSON standard."""
     scores = formater_scores(ucb['likes'], ucb['propositions'], ucb['total'])
     info   = GENRE_INFO[genres[genre_idx]]
     return {
@@ -331,6 +337,9 @@ def construire_reponse(ucb, genre_idx, chanson):
         'total':        ucb['total'],
         'likes_count':  ucb.get('likes_count', 0),
         'epsilon':      round(epsilon_adaptatif(ucb.get('likes_count', 0)), 2),
+        # Catalogue complet pour mettre à jour la playlist côté client
+        'catalogue':    get_catalogue_complet(),
+        'catalogue_pret': _catalogue_pret,
     }
 
 # ═══════════════════════════════════════════════════
@@ -369,6 +378,9 @@ def index():
         likes_count=ucb.get('likes_count', 0),
         est_connu=est_connu,
         epsilon=round(epsilon_adaptatif(ucb.get('likes_count', 0)), 2),
+        # Catalogue complet passé au template
+        catalogue=get_catalogue_complet(),
+        catalogue_pret=_catalogue_pret,
     )
 
 @app.route('/aimer', methods=['POST'])
@@ -378,7 +390,6 @@ def aimer():
     genre_idx = ucb['genre_actuel']
     chanson   = ucb.get('chanson_actuelle', {})
 
-    # Récompense enrichie = base + bonus popularité Deezer
     bonus     = chanson.get('bonus_popularite', 0.0) if isinstance(chanson, dict) else 0.0
     ucb['likes'] = decay_likes(ucb['likes'], genre_idx)
     ucb['likes'][genre_idx] += 1.0 + bonus
@@ -392,7 +403,6 @@ def aimer():
     ucb['historique'] = ucb['historique'][-10:]
     sauvegarder_session(ucb)
 
-    # Prochain
     genre_idx = choisir_genre(ucb)
     chanson   = choisir_chanson(genre_idx)
     ucb['propositions'][genre_idx] += 1
@@ -434,18 +444,20 @@ def reinitialiser():
         os.remove(MEMORY_FILE)
     return jsonify({'ok': True})
 
+@app.route('/catalogue', methods=['GET'])
+def voir_catalogue():
+    """Route pour récupérer le catalogue Deezer actuel (polling côté client)."""
+    return jsonify({
+        'catalogue': get_catalogue_complet(),
+        'pret':      _catalogue_pret,
+    })
+
 @app.route('/memoire', methods=['GET'])
 def voir_memoire():
     memoire = charger_memoire()
     if not memoire:
         return jsonify({'message': 'Aucune memoire enregistree.'})
     return jsonify(memoire)
-
-@app.route('/chansons/<genre>', methods=['GET'])
-def voir_chansons(genre):
-    """Route debug — voir les chansons Deezer pour un genre."""
-    chansons = chercher_chansons_deezer(genre)
-    return jsonify({'genre': genre, 'count': len(chansons), 'chansons': chansons[:5]})
 
 if __name__ == '__main__':
     app.run(debug=True)

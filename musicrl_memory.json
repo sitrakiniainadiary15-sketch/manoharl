@@ -1,0 +1,76 @@
+{
+  "likes": [
+    0.0,
+    4.028274816000001,
+    2.04388,
+    0.0,
+    0.0,
+    0.0,
+    1.001,
+    3.0948960000000003
+  ],
+  "propositions": [
+    0,
+    4,
+    2,
+    0,
+    0,
+    0,
+    1,
+    3
+  ],
+  "total": 10,
+  "likes_count": 10,
+  "historique": [
+    {
+      "action": "like",
+      "genre": "Hip-Hop",
+      "titre": "Hip Hop"
+    },
+    {
+      "action": "like",
+      "genre": "Hip-Hop",
+      "titre": "Hip-Hop"
+    },
+    {
+      "action": "like",
+      "genre": "Pop",
+      "titre": "POP (feat. Guy2Bezbar)"
+    },
+    {
+      "action": "like",
+      "genre": "Pop",
+      "titre": "POP (feat. La Mano 1.9)"
+    },
+    {
+      "action": "like",
+      "genre": "Pop",
+      "titre": "POP (feat. Guy2Bezbar)"
+    },
+    {
+      "action": "like",
+      "genre": "Metal",
+      "titre": "Nothing Else Matters (Remastered 2021)"
+    },
+    {
+      "action": "like",
+      "genre": "R&B",
+      "titre": "Thank U in Advance"
+    },
+    {
+      "action": "like",
+      "genre": "Metal",
+      "titre": "The Metal"
+    },
+    {
+      "action": "like",
+      "genre": "Metal",
+      "titre": "Métal"
+    },
+    {
+      "genre": "Pop",
+      "titre": "POP (feat. Guy2Bezbar)",
+      "action": "like"
+    }
+  ]
+}
